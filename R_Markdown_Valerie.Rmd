@@ -14,6 +14,7 @@ rm(list = ls())
 library(tidyverse)
 library(ggplot2)
 library(tidyr)
+library(tibble)
 ```
 
 
@@ -79,15 +80,28 @@ t_teosinte_genotypes <- t_teosinte_genotypes[-c(1,2,3),]
 dim(t_teosinte_genotypes) # 983 rows just like snp_position
 ```
 
-Now I am joining snp_position to both of these genotype files.
+Now I am cleaning snp_position and fixing the join key for genotype files.
+Assignment says files formated with 1st column is "SNP_ID", the 2nd column is "Chromosome", the 3rd column is "Position", and subsequent columns are genotype data from either maize or teosinte individuals."
+help: _?rownames_to_column_ and _https://stackoverflow.com/questions/29511215/how-can-i-convert-row-names-into-the-first-column_ 
 ```{r}
-# MAIZE
-joined_maize
-
-# TEOSINTE
-joined_teosinte
+# Clean snp_position. We only want column 1, 3, 4
+cleaned_snp_position <- select(snp_position, 
+                               "SNP_ID", "Chromosome", "Position")
+# I don't have SNP_ID column name from genotype data so here I add it.
+t_maize_genotypes <- tibble::rownames_to_column(t_maize_genotypes, "SNP_ID")
+t_teosinte_genotypes <- tibble::rownames_to_column(t_teosinte_genotypes, "SNP_ID")
 ```
 
+Joining snp_position to both of these genotype files.
+help: _https://r4ds.hadley.nz/joins.html_
+```{r}
+# MAIZE
+joined_maize <- left_join(t_maize_genotypes, cleaned_snp_position, by = "SNP_ID")
+?left_join
+
+# TEOSINTE
+#joined_teosinte
+```
 
 
 
