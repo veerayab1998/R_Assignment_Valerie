@@ -15,6 +15,8 @@ library(tidyverse)
 library(ggplot2)
 library(tidyr)
 library(tibble)
+library(dplyr)
+getwd()
 ```
 
 
@@ -35,7 +37,6 @@ library(tibble)
 genotypes <- read_tsv("data/fang_et_al_genotypes.txt")
 
 snp_position <- read_tsv("data/snp_position.txt")
-
 
 
 # Inspecting the data
@@ -67,6 +68,7 @@ teosinte_genotypes <- genotypes %>% filter(Group == "ZMPBA" |
 # Checking: both result is 3, which is accurate
 n_distinct(maize_genotypes$Group)
 n_distinct(teosinte_genotypes$Group) 
+
 ```
 
 Then I will transpose the genotype files so that columns become rows by using t() before joining.
@@ -75,11 +77,17 @@ Then I will transpose the genotype files so that columns become rows by using t(
 t_maize_genotypes <- as.data.frame(t(maize_genotypes))
 t_maize_genotypes <- t_maize_genotypes[-c(1,2,3),]
 dim(t_maize_genotypes) # 983 rows just like snp_position
+# Add Sample_ID back
+colnames(t_maize_genotypes) <- maize_genotypes$Sample_ID
 
 # TEOSINTE
 t_teosinte_genotypes <- as.data.frame(t(teosinte_genotypes))
 t_teosinte_genotypes <- t_teosinte_genotypes[-c(1,2,3),]
 dim(t_teosinte_genotypes) # 983 rows just like snp_position
+# Add Sample_ID back
+colnames(t_teosinte_genotypes) <- teosinte_genotypes$Sample_ID
+
+
 ```
 
 Now I am cleaning snp_position and fixing the join key for genotype files.
@@ -92,6 +100,7 @@ cleaned_snp_position <- select(snp_position,
 # I don't have SNP_ID column name from genotype data so here I add it.
 t_maize_genotypes <- tibble::rownames_to_column(t_maize_genotypes, "SNP_ID")
 t_teosinte_genotypes <- tibble::rownames_to_column(t_teosinte_genotypes, "SNP_ID")
+
 ```
 
 Joining snp_position to both of these genotype files.
@@ -114,19 +123,99 @@ joined_teosinte <- left_join(
 tail(names(joined_teosinte), 5) # it stuck it onto the end, lets move it to the front
 joined_teosinte <- joined_teosinte %>% select(SNP_ID, Chromosome, Position, everything())
 
+```
+
+Now let's check the new datasets : `joined_maize` and `joined_teosinte`
+```{r}
+unique(joined_maize$Chromosome) # we need to remove multiple and unknown
+joined_maize <- filter(joined_maize, 
+                Chromosome != "multiple" & Chromosome != "unknown")
+unique(joined_maize$Chromosome) # gone!
+
+unique(joined_teosinte$Chromosome) # we need to remove multiple and unknown
+joined_teosinte <- filter(joined_teosinte, 
+                Chromosome != "multiple" & Chromosome != "unknown")
+unique(joined_teosinte$Chromosome)  # gone!
+```
+
+Fixing position and removing positions that are not numeric, and hence can not be sorted by increasing position values.
+```{r}
+class(joined_maize$Position) # character, should be numeric so I don't sort wrong
+cleaned_maize <- joined_maize %>%
+  mutate(Position = as.numeric(Position)) %>%
+  filter(!is.na(Position))
+
+cleaned_teosinte <- joined_teosinte %>%
+  mutate(Position = as.numeric(Position)) %>%
+  filter(!is.na(Position))
+
+```
+This is how I would generate the final files for 1 chromosome.
+```{r}
+
+dim(cleaned_maize) # 1576 columns
+test_chr_1 <- cleaned_maize %>%
+  filter(Chromosome == "1")
+test_chr_1_increase <- test_chr_1 %>%
+  arrange(Position) %>%
+  mutate(across(4:1576, function(x){
+    ifelse(x == "?/?", "?", x)
+  })
+  )
+
+test_chr_1_decrease <- test_chr_1 %>%
+  arrange(desc(Position))%>%
+  mutate(across(4:1576, function(x){
+    ifelse(x == "?/?", "-", x)
+  })
+  )
+``` 
+
+Creating a function so I can use `lapply`.
+```{r}
+
+final_files <- function (df, chr, name){
+  
+  chr_df <- df %>% filter(Chromosome == chr)
+  chr_increase <- chr_df %>% 
+    arrange(Position) %>%
+    mutate(across(4:1576, function(x){
+    ifelse(x == "?/?", "?", x)
+  })
+  )
+  
+  chr_decrease <- chr_df %>%
+  arrange(desc(Position))%>%
+  mutate(across(4:1576, function(x){
+    ifelse(x == "?/?", "-", x)
+  })
+  )
+# write_csv(dataframe, output path should be final_results, delimiters) 
+# I need no spaces with it in the final_maize or final_teosinte folder which is inside the final_results folder. 
+# set up should be : final_results/final_maize/maize_chr1_increasing.csv
+  # which means that the actual file names requires 
+    # name + _chr + "chr" (the actual value) + _increasg.csv
+   write_csv(chr_increase, paste0("final_results/final_", name, "/", 
+                                  name, "_chr", chr, 
+                                  "_increasing.csv") )
+   write_csv(chr_decrease, paste0("final_results/final_", name, "/", 
+                                  name, "_chr", chr, 
+                                  "_decreasing.csv") )
+
+}
 
 ```
 
-
-
-For maize (Group = ZMMIL, ZMMLR, and ZMMMR in the third column of the fang_et_al_genotypes.txt file) we want 20 files in total:
+Using `lapply`
 ```{r}
+class(cleaned_maize$Chromosome) # characters
+for(chr in as.character(1:10)) {
+  final_files(cleaned_maize, chr, "maize") 
+}
 
-```
-
-For teosinte (Group = ZMPBA, ZMPIL, and ZMPJA in the third column of the fang_et_al_genotypes.txt file) we want 20 files in total:
-```{r}
-
+for(chr in as.character(1:10)) {
+  final_files(cleaned_maize, chr, "teosinte") 
+}
 ```
 
 ## Part II Visualization
